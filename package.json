@@ -28,7 +28,7 @@
     "minimist": "^1.1.1"
   },
   "scripts": {
-    "prepublish": "./node_modules/.bin/gulp build"
+    "install": "./node_modules/.bin/gulp build"
   },
   "private": true,
   "engines": {
