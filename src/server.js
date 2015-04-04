@@ -1,25 +1,37 @@
 'use strict';
-var express = require('express');
-var passport = require('passport');
-var LocalStrategy = require('passport-local').Strategy;
-var morgan = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
-var request = require('request');
-var http = require('http');
-var killable = require('killable');
+var express = require('express'),
+  passport = require('passport'),
+  LocalStrategy = require('passport-local').Strategy,
+  morgan = require('morgan'),
+  cookieParser = require('cookie-parser'),
+  bodyParser = require('body-parser'),
+  request = require('request'),
+  http = require('http'),
+  killable = require('killable'),
+  TypedError = require("error/typed"),
+  WrappedError = require('error/wrapped');
 
 var server;
 
-function start(cb) {
+var dbConfig = {
+  protocol: 'CONFIG_DB_PROTOCOL',
+  domain: 'CONFIG_DB_HOST',
+  port: 'CONFIG_DB_PORT',
+  adminUser: 'admin',
+  adminPass: 'CONFIG_DB_ADMIN_PASS'
+};
 
-  var dbServer = {
-    protocol: 'http',
-    domain: '192.168.59.103',
-    port: 5984,
-    adminUser: 'admin',
-    adminPass: 'KtgFck3D557Sn545'
-  };
+var DbError = TypedError({
+  type: 'db',
+  statusCode: null
+});
+
+var AuthenticationError = TypedError({
+  type: 'authentication',
+  statusCode: null
+});
+
+function start(cb) {
 
   var app = express();
 
@@ -49,13 +61,9 @@ function start(cb) {
     if (username && password) {
       createUser(username, password, function(err, user) {
         if (err) {
-          res.status(400).json({
-            error: 'createfailed',
-            description: err.message
-          });
-        } else {
-          res.json(user);
+          res.status(err.statusCode).json({error: err.type, message: err.message});
         }
+        res.json(user);
       });
     } else {
       res.status(400).send();
@@ -68,21 +76,14 @@ function start(cb) {
       failureFlash: false
     }, function(err, user, info) {
       if (err) {
-        return res.status(500).send();
+        return res.status(err.statusCode).json({error: err.type, message: err.message});
       }
-      if (user) {
-        res.json(user);
-      } else {
-        res.status(401).json({
-          error: 'invalidcredentials',
-          message: 'Invalid username/password.'
-        });
-      }
+      res.json(user);
     })(req, res, next);
   });
 
 
-  var port = process.env.PORT || 8080;
+  var port = 'CONFIG_WEB_PORT';
   server = http.createServer(app);
   killable(server);
   server.listen(port, cb);
@@ -104,50 +105,49 @@ function stop(cb) {
 function authenticateUser(username, password, callback) {
   var dbName = calcDbNameFromUsername(username);
   request.get({
-    uri: dbServer.protocol + '://' + dbServer.domain + ':' + dbServer.port + '/' + dbName,
+    uri: dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/' + dbName,
     auth: {
       'user': username,
       'pass': password
     }
   }, function(err, response, body) {
     if (err) {
-      return callback(e);
+      return callback(new DbError({statusCode: 503, message: err.message}));
     }
     if (response.statusCode === 200) {
       callback(null, createUserObject(dbName, username, password));
     } else if (response.statusCode === 401) {
-      callback(null, false);
+      callback(new AuthenticationError({statusCode: 401, message: 'Invalid username/password.'}));
     } else {
-      callback(new Error('Unknown error occurred while authenticating user'));
+      callback(new AuthenticationError({statusCode: 500, message: body}));
     }
   });
 }
 
 function createUser(username, password, callback) {
-  var dbName = calcDbNameFromUsername(username);
   request.put({
-    uri: dbServer.protocol + '://' + dbServer.domain + ':' + dbServer.port + '/_users/org.couchdb.user:' + username,
+    uri: dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/_users/org.couchdb.user:' + encodeURIComponent(username),
     auth: {
-      'user': dbServer.adminUser,
-      'pass': dbServer.adminPass
+      'user': dbConfig.adminUser,
+      'pass': dbConfig.adminPass
     },
     json: {
-      "_id": "org.couchdb.user:dbreader",
+      "_id": 'org.couchdb.user:' + username,
       "name": username,
-      "type": "user",
+      "type": 'user',
       "roles": [],
       "password": password
     }
   }, function(err, response, body) {
     if (err) {
-      return callback(err);
+      return callback(new DbError({statusCode: 503, message: err.message}));
     }
     if (response.statusCode === 201) {
-      callback(null, createUserObject(dbName, username, password));
+      callback(null, createUserObject(calcDbNameFromUsername(username), username, password));
     } else if (response.statusCode === 412) {
-      callback(new Error('User already exists'));
+      callback(new AuthenticationError({statusCode: 412, message: 'User already exists.'}));
     } else {
-      callback(new Error('Unknown error occurred while creating user'));
+      callback(new AuthenticationError({statusCode: 500, message: body}));
     }
   });
 }
@@ -155,7 +155,7 @@ function createUser(username, password, callback) {
 function createUserObject(dbName, username, password) {
   return {
     'username': username,
-    'dbUrl': dbServer.protocol + '://' + dbServer.domain + ':' + dbServer.port + '/' + dbName,
+    'dbUrl': dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/' + dbName,
     'dbCredentials': [username, password]
   };
 }
@@ -170,4 +170,4 @@ module.exports = function() {
     start: start,
     stop: stop
   }
-}
+};

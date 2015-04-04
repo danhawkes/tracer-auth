@@ -1,34 +1,12 @@
 var gulp = require('gulp'),
   $ = require('gulp-load-plugins')(),
   del = require('del'),
-  minimist = require('minimist');
+  config = require('./gulpconfig');
 
 var SRC = 'src',
   DST = 'build';
 
 var server;
-
-var args = minimist(process.argv.slice(2), {
-  strings: ['env'],
-  default: {
-    'env': 'prod'
-  }
-});
-
-var config = {
-  'ENV_DB_PROTOCOL': {
-    'dev': 'http',
-    'prod': 'https'
-  },
-  'ENV_DB_PORT': {
-    'dev': 5984,
-    'prod': 5984
-  },
-  'ENV_DB_HOST': {
-    'dev': 'localhost',
-    'prod': 'tracer-db.arcs.co'
-  }
-};
 
 
 function clean(done) {
@@ -37,7 +15,9 @@ function clean(done) {
 
 function compile() {
   return gulp.src(SRC + '/*.js')
-    .pipe($.renvy(config, args.env))
+    .pipe($.sourcemaps.init())
+    .pipe($.sourcemaps.write())
+    .pipe($.frep(config))
     .pipe(gulp.dest(DST))
 }
 
