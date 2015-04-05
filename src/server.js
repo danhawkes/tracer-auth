@@ -83,7 +83,7 @@ function start(cb) {
   });
 
 
-  var port = 'CONFIG_WEB_PORT';
+  var port = process.env.port || 8080;
   server = http.createServer(app);
   killable(server);
   server.listen(port, cb);
