@@ -83,7 +83,7 @@ function start(cb) {
   });
 
 
-  var port = process.env.PORT | 5000;
+  var port = process.env.PORT || 5000;
   server = http.createServer(port);
   killable(server);
   server.listen(port, cb);
