@@ -1,22 +1,15 @@
 'use strict';
 var express = require('express'),
-  passport = require('passport'),
-  LocalStrategy = require('passport-local').Strategy,
-  morgan = require('morgan'),
-  cookieParser = require('cookie-parser'),
   bodyParser = require('body-parser'),
   request = require('request'),
   http = require('http'),
   killable = require('killable'),
-  TypedError = require("error/typed"),
-  WrappedError = require('error/wrapped');
+  TypedError = require("error/typed");
 
 var server;
 
 var dbConfig = {
-  protocol: 'CONFIG_DB_PROTOCOL',
-  domain: 'CONFIG_DB_HOST',
-  port: 'CONFIG_DB_PORT',
+  url: 'CONFIG_DB_PROTOCOL' + '://' + 'CONFIG_DB_HOST' + ':' + 'CONFIG_DB_PORT',
   adminUser: 'admin',
   adminPass: 'CONFIG_DB_ADMIN_PASS'
 };
@@ -32,7 +25,6 @@ var AuthenticationError = TypedError({
 });
 
 function start(cb) {
-
   var app = express();
 
   app.use(function(req, res, next) {
@@ -41,19 +33,8 @@ function start(cb) {
     next();
   });
   app.use(express.static('static'));
-  app.use(morgan('dev'))
-  app.use(cookieParser());
   app.use(bodyParser.json());
-  app.use(bodyParser.urlencoded({
-    extended: true
-  }));
-  app.use(passport.initialize());
-
-  passport.use(new LocalStrategy(
-    function(username, password, done) {
-      authenticateUser(username, password, done);
-    }
-  ));
+  app.use(bodyParser.urlencoded({extended: false}));
 
   app.post('/register', function(req, res) {
     var username = req.body.username;
@@ -71,21 +52,22 @@ function start(cb) {
   });
 
   app.post('/login', function(req, res, next) {
-    passport.authenticate('local', {
-      session: false,
-      failureFlash: false
-    }, function(err, user, info) {
-      if (err) {
-        return res.status(err.statusCode).json({error: err.type, message: err.message});
-      }
-      res.json(user);
-    })(req, res, next);
+    var username = req.body.username;
+    var password = req.body.password;
+    if (username && password) {
+      authenticateUser(username, password, function(err, user) {
+        if (err) {
+          return res.status(err.statusCode).json({error: err.type, message: err.message});
+        }
+        return res.json(user);
+      });
+    } else {
+      res.status(400).send();
+    }
   });
 
-
   var port = process.env.PORT || 5000;
-  server = http.createServer(app);
-  killable(server);
+  server = killable(http.createServer(app));
   server.listen(port, cb);
   console.log('Server started on port ' + port + '.');
 }
@@ -105,28 +87,28 @@ function stop(cb) {
 function authenticateUser(username, password, callback) {
   var dbName = calcDbNameFromUsername(username);
   request.get({
-    uri: dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/' + dbName,
+    uri: dbConfig.url + '/' + dbName,
     auth: {
       'user': username,
       'pass': password
     }
   }, function(err, response, body) {
     if (err) {
-      return callback(new DbError({statusCode: 503, message: err.message}));
+      return callback(new DbError({statusCode: 502, message: err.message}));
     }
     if (response.statusCode === 200) {
       callback(null, createUserObject(dbName, username, password));
     } else if (response.statusCode === 401) {
       callback(new AuthenticationError({statusCode: 401, message: 'Invalid username/password.'}));
     } else {
-      callback(new AuthenticationError({statusCode: 500, message: body}));
+      callback(new AuthenticationError({statusCode: 500, message: body.reason}));
     }
   });
 }
 
 function createUser(username, password, callback) {
   request.put({
-    uri: dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/_users/org.couchdb.user:' + encodeURIComponent(username),
+    uri: dbConfig.url + '/_users/org.couchdb.user:' + encodeURIComponent(username),
     auth: {
       'user': dbConfig.adminUser,
       'pass': dbConfig.adminPass
@@ -140,14 +122,14 @@ function createUser(username, password, callback) {
     }
   }, function(err, response, body) {
     if (err) {
-      return callback(new DbError({statusCode: 503, message: err.message}));
+      return callback(new DbError({statusCode: 502, message: err.message}));
     }
     if (response.statusCode === 201) {
       callback(null, createUserObject(calcDbNameFromUsername(username), username, password));
-    } else if (response.statusCode === 412) {
-      callback(new AuthenticationError({statusCode: 412, message: 'User already exists.'}));
+    } else if (response.statusCode === 409) {
+      callback(new AuthenticationError({statusCode: 409, message: 'User already exists.'}));
     } else {
-      callback(new AuthenticationError({statusCode: 500, message: body}));
+      callback(new AuthenticationError({statusCode: 500, message: body.reason}));
     }
   });
 }
