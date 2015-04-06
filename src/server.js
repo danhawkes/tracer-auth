@@ -137,7 +137,7 @@ function createUser(username, password, callback) {
 function createUserObject(dbName, username, password) {
   return {
     'username': username,
-    'dbUrl': dbConfig.protocol + '://' + dbConfig.domain + ':' + dbConfig.port + '/' + dbName,
+    'dbUrl': dbConfig.url + '/' + dbName,
     'dbCredentials': [username, password]
   };
 }
