@@ -84,7 +84,7 @@ function start(cb) {
 
 
   var port = process.env.PORT || 5000;
-  server = http.createServer(port);
+  server = http.createServer(app);
   killable(server);
   server.listen(port, cb);
   console.log('Server started on port ' + port + '.');
