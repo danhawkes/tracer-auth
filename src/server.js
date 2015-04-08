@@ -9,7 +9,7 @@ var express = require('express'),
 var server;
 
 var dbConfig = {
-  url: 'CONFIG_DB_PROTOCOL' + '://' + 'CONFIG_DB_HOST' + ':' + 'CONFIG_DB_PORT',
+  url: 'CONFIG_DB_URL',
   adminUser: 'admin',
   adminPass: 'CONFIG_DB_ADMIN_PASS'
 };
